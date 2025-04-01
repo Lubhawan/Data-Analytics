@@ -2,61 +2,73 @@ import re
 import difflib
 
 def extract_chapters(text, reference_chapters):
-    # Dictionary to store extracted chapters
-    chapters = {}
-    
     # Process the reference chapters
-    ref_chapters = {}
+    ref_chapters = []
     for line in reference_chapters.strip().split('\n'):
         if line.strip():
             match = re.match(r'(\d+)\.\s+(.*)', line)
             if match:
-                chapter_num = int(match.group(1))
+                chapter_num = match.group(1)
                 chapter_title = match.group(2).strip()
-                ref_chapters[chapter_num] = chapter_title
+                combined = f"{chapter_num} {chapter_title}"
+                ref_chapters.append((int(chapter_num), combined))
     
-    # Find potential chapter headings
-    chapter_pattern = r'\b(\d+)\s+([\w\s\-:,()&]+)'
-    chapter_matches = list(re.finditer(chapter_pattern, text))
+    # Sort reference chapters by number
+    ref_chapters.sort(key=lambda x: x[0])
     
-    # Process each potential match
-    valid_matches = []
-    for match in chapter_matches:
-        chapter_num = int(match.group(1))
-        potential_title = match.group(2).strip()
+    # Find chapters in the text based on similarity
+    chapters = {}
+    prev_end = 0
+    
+    for i, (chapter_num, ref_combined) in enumerate(ref_chapters):
+        # Search for this chapter in the remaining text
+        best_match = None
+        best_ratio = 0
+        best_start = 0
         
-        # If this number exists in our reference list
-        if chapter_num in ref_chapters:
-            ref_title = ref_chapters[chapter_num]
+        # Look for patterns like "1 Chapter Title" with various spacing/formatting
+        potential_matches = re.finditer(r'\b' + re.escape(str(chapter_num)) + r'\s+[\w\s\-:,()&]+', text[prev_end:])
+        
+        for match in potential_matches:
+            match_text = match.group(0).strip()
+            similarity = difflib.SequenceMatcher(None, match_text, ref_combined).ratio()
             
-            # Compare the potential title with reference title
-            similarity = difflib.SequenceMatcher(None, potential_title, ref_title).ratio()
+            if similarity >= 0.9 and similarity > best_ratio:
+                best_ratio = similarity
+                best_match = match_text
+                best_start = prev_end + match.start()
+        
+        if best_match:
+            # If this is not the last chapter, find the start of the next chapter
+            if i < len(ref_chapters) - 1:
+                next_chapter_num = ref_chapters[i + 1][0]
+                next_matches = list(re.finditer(r'\b' + re.escape(str(next_chapter_num)) + r'\s+[\w\s\-:,()&]+', text))
+                
+                end_pos = None
+                for next_match in next_matches:
+                    next_combined = next_match.group(0).strip()
+                    next_similarity = difflib.SequenceMatcher(None, next_combined, ref_chapters[i + 1][1]).ratio()
+                    if next_similarity >= 0.9:
+                        end_pos = next_match.start()
+                        break
+                
+                if end_pos is None:
+                    end_pos = len(text)
+            else:
+                end_pos = len(text)
             
-            # If similarity is above 0.9 (90%), consider it a match
-            if similarity >= 0.9:
-                valid_matches.append((match, chapter_num, potential_title))
-    
-    # Sort matches by position in text
-    valid_matches.sort(key=lambda x: x[0].start())
-    
-    # Extract content between matched chapters
-    for i, (match, chapter_num, chapter_title) in enumerate(valid_matches):
-        start_pos = match.end()
-        
-        # If this is not the last chapter, set end position to the start of next chapter
-        if i < len(valid_matches) - 1:
-            end_pos = valid_matches[i + 1][0].start()
-        else:
-            end_pos = len(text)
-        
-        # Extract the chapter content
-        content = text[start_pos:end_pos].strip()
-        
-        # Store the chapter info
-        chapters[chapter_num] = {
-            "title": chapter_title,
-            "content": content
-        }
+            # Extract chapter content
+            content = text[best_start + len(best_match):end_pos].strip()
+            
+            # Store chapter
+            chapter_title = best_match[len(str(chapter_num)):].strip()
+            chapters[chapter_num] = {
+                "title": chapter_title,
+                "content": content
+            }
+            
+            # Update previous end position
+            prev_end = best_start
     
     return chapters
 
@@ -99,7 +111,7 @@ if __name__ == "__main__":
     chapters = extract_chapters(book_text, reference_chapters)
     
     # Print extracted chapters
-    for num in sorted(chapters.keys()):
+    for num in sorted(chapters.keys(), key=int):
         print(f"Chapter {num}: {chapters[num]['title']}")
         # Uncomment to print first 100 chars of content
         # print(f"Content preview: {chapters[num]['content'][:100]}...")
