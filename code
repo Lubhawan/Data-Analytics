@@ -1,19 +1,106 @@
-# Use streaming for long requests
-    response_text = ""
-    with client.messages.stream(
-        model="claude-3-5-sonnet-20250219",
-        max_tokens=80000,
-        temperature=0.7,
-        system="You are an expert at analyzing PDF documentation and matching questions to relevant topics.",
-        messages=[
-            {"role": "user", "content": prompt},
-        ],
-    ) as stream:
-        print("Receiving response stream...")
-        for text in stream.text_stream:
-            response_text += text
-            # Optional: Print progress indicator
-            print(".", end="", flush=True)
-        print("\nStream complete.")
-   
-    return response_text
+import re
+import difflib
+
+def extract_chapters(text, reference_chapters):
+    # Dictionary to store extracted chapters
+    chapters = {}
+    
+    # Process the reference chapters
+    ref_chapters = {}
+    for line in reference_chapters.strip().split('\n'):
+        if line.strip():
+            match = re.match(r'(\d+)\.\s+(.*)', line)
+            if match:
+                chapter_num = int(match.group(1))
+                chapter_title = match.group(2).strip()
+                ref_chapters[chapter_num] = chapter_title
+    
+    # Find potential chapter headings
+    chapter_pattern = r'\b(\d+)\s+([\w\s\-:,()&]+)'
+    chapter_matches = list(re.finditer(chapter_pattern, text))
+    
+    # Process each potential match
+    valid_matches = []
+    for match in chapter_matches:
+        chapter_num = int(match.group(1))
+        potential_title = match.group(2).strip()
+        
+        # If this number exists in our reference list
+        if chapter_num in ref_chapters:
+            ref_title = ref_chapters[chapter_num]
+            
+            # Compare the potential title with reference title
+            similarity = difflib.SequenceMatcher(None, potential_title, ref_title).ratio()
+            
+            # If similarity is above 0.9 (90%), consider it a match
+            if similarity >= 0.9:
+                valid_matches.append((match, chapter_num, potential_title))
+    
+    # Sort matches by position in text
+    valid_matches.sort(key=lambda x: x[0].start())
+    
+    # Extract content between matched chapters
+    for i, (match, chapter_num, chapter_title) in enumerate(valid_matches):
+        start_pos = match.end()
+        
+        # If this is not the last chapter, set end position to the start of next chapter
+        if i < len(valid_matches) - 1:
+            end_pos = valid_matches[i + 1][0].start()
+        else:
+            end_pos = len(text)
+        
+        # Extract the chapter content
+        content = text[start_pos:end_pos].strip()
+        
+        # Store the chapter info
+        chapters[chapter_num] = {
+            "title": chapter_title,
+            "content": content
+        }
+    
+    return chapters
+
+# Example usage:
+if __name__ == "__main__":
+    # Reference chapter list provided by you
+    reference_chapters = """
+    1. The Evolution of Health Plans
+    2. Basic Concepts of Health Insurance
+    3. Health Plan Benefits and Networks
+    4. Provider Compensation: Fee-for-Service to Value-Based Care
+    5. The Health Maintenance Organization (HMO)
+    6. Types of HMOs and ACO Basics
+    7. PPOs and Other Health Plan Types
+    8. Health Plans for Specialty Services
+    9. Account-Based Plans: Part I
+    10. Account-Based Plans: Part II
+    11. Provider Organizations and Compensation Models
+    12. Network Structure and Management
+    13. Utilization Management
+    14. Utilization Review
+    15. Quality Assessment and Improvement
+    16. Quality Standards, Accreditation, and PerformanceMeasures
+    17. Marketing
+    18. Underwriting, Rating, and Plan Funding
+    19. Information Management
+    20. Claims Administration
+    21. Member Services
+    22. Federal Laws and Regulation
+    23. The Affordable Care Act
+    24. State Laws and Regulation
+    25. Government Programs: Medicare
+    26. Government Programs: Medicaid, CHIP, FEHB, TRICARE, and Workers' Compensation
+    27. Ethics and Health Equity
+    """
+    
+    with open("health_plans_book.txt", "r") as file:
+        book_text = file.read()
+    
+    chapters = extract_chapters(book_text, reference_chapters)
+    
+    # Print extracted chapters
+    for num in sorted(chapters.keys()):
+        print(f"Chapter {num}: {chapters[num]['title']}")
+        # Uncomment to print first 100 chars of content
+        # print(f"Content preview: {chapters[num]['content'][:100]}...")
+        # print()
