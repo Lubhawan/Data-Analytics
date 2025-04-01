@@ -1,63 +1,28 @@
-def extract_chapters(text, chapter_headings):
-    """
-    Extract chapters and their content from book text based on provided chapter headings.
-    
-    Args:
-        text (str): The full text of the book
-        chapter_headings (list): List of chapter headings with chapter numbers
-        
-    Returns:
-        dict: Dictionary with chapter headings as keys and chapter content as values
-    """
-    # Dictionary to store chapters and their content
-    chapters = {}
-    
-    # Process chapter headings to create matching patterns
-    # Strip chapter numbers from the beginning
-    clean_headings = [heading.split(' ', 1)[1] if ' ' in heading else heading for heading in chapter_headings]
-    
-    # For each chapter, find its start and end
-    for i, heading in enumerate(chapter_headings):
-        chapter_num = heading.split(' ', 1)[0]
-        chapter_title = heading.split(' ', 1)[1] if ' ' in heading else heading
-        
-        # Create pattern to find this chapter
-        # Look for chapter number followed by the title
-        pattern = f"{chapter_num}\\s+{chapter_title}"
-        
-        # Find start of current chapter
-        import re
-        start_match = re.search(pattern, text, re.IGNORECASE)
-        
-        if start_match:
-            start_index = start_match.start()
+def extract_pdf_data(pdf_path, use_ocr=False):
+    """Extract text from PDF using multiple methods for best results"""
+    try:
+        # Try pdfplumber first
+        with pdfplumber.open(pdf_path) as pdf:
+            text = ""
+            for page in pdf.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted + "\n"
             
-            # Find start of next chapter (if there is one)
-            end_index = len(text)
-            if i < len(chapter_headings) - 1:
-                next_num = chapter_headings[i+1].split(' ', 1)[0]
-                next_title = chapter_headings[i+1].split(' ', 1)[1] if ' ' in chapter_headings[i+1] else chapter_headings[i+1]
-                next_pattern = f"{next_num}\\s+{next_title}"
-                
-                next_match = re.search(next_pattern, text, re.IGNORECASE)
-                if next_match:
-                    end_index = next_match.start()
+            # If we got meaningful text, return it
+            if len(text.strip()) > 100:
+                return text
+        
+        # If pdfplumber didn't get good results, try PDFMiner
+        text = extract_text(pdf_path)
+        if len(text.strip()) > 100:
+            return text
             
-            # Extract chapter content
-            chapter_content = text[start_index:end_index].strip()
-            chapters[heading] = chapter_content
-        else:
-            chapters[heading] = "Chapter not found in text"
-    
-    return chapters
-
-# Example usage:
-# chapter_headings = [
-#     "1 The Evolution of Health Plans",
-#     "2 Basic Concepts of Health Insurance",
-#     # ... other headings
-# ]
-# with open('extracted_book.txt', 'r') as file:
-#     book_text = file.read()
-# 
-# chapters = extract_chapters(book_text, chapter_headings)
+        # If still not successful and OCR is enabled, try OCR
+        if use_ocr:
+            return extract_text_with_ocr(pdf_path)
+            
+        return text
+    except Exception as e:
+        print(f"Error extracting PDF: {e}")
+        return ""
