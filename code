@@ -1,118 +1,63 @@
-import re
-import difflib
-
-def extract_chapters(text, reference_chapters):
-    # Process the reference chapters
-    ref_chapters = []
-    for line in reference_chapters.strip().split('\n'):
-        if line.strip():
-            match = re.match(r'(\d+)\.\s+(.*)', line)
-            if match:
-                chapter_num = match.group(1)
-                chapter_title = match.group(2).strip()
-                combined = f"{chapter_num} {chapter_title}"
-                ref_chapters.append((int(chapter_num), combined))
+def extract_chapters(text, chapter_headings):
+    """
+    Extract chapters and their content from book text based on provided chapter headings.
     
-    # Sort reference chapters by number
-    ref_chapters.sort(key=lambda x: x[0])
-    
-    # Find chapters in the text based on similarity
+    Args:
+        text (str): The full text of the book
+        chapter_headings (list): List of chapter headings with chapter numbers
+        
+    Returns:
+        dict: Dictionary with chapter headings as keys and chapter content as values
+    """
+    # Dictionary to store chapters and their content
     chapters = {}
-    prev_end = 0
     
-    for i, (chapter_num, ref_combined) in enumerate(ref_chapters):
-        # Search for this chapter in the remaining text
-        best_match = None
-        best_ratio = 0
-        best_start = 0
+    # Process chapter headings to create matching patterns
+    # Strip chapter numbers from the beginning
+    clean_headings = [heading.split(' ', 1)[1] if ' ' in heading else heading for heading in chapter_headings]
+    
+    # For each chapter, find its start and end
+    for i, heading in enumerate(chapter_headings):
+        chapter_num = heading.split(' ', 1)[0]
+        chapter_title = heading.split(' ', 1)[1] if ' ' in heading else heading
         
-        # Look for patterns like "1 Chapter Title" with various spacing/formatting
-        potential_matches = re.finditer(r'\b' + re.escape(str(chapter_num)) + r'\s+[\w\s\-:,()&]+', text[prev_end:])
+        # Create pattern to find this chapter
+        # Look for chapter number followed by the title
+        pattern = f"{chapter_num}\\s+{chapter_title}"
         
-        for match in potential_matches:
-            match_text = match.group(0).strip()
-            similarity = difflib.SequenceMatcher(None, match_text, ref_combined).ratio()
+        # Find start of current chapter
+        import re
+        start_match = re.search(pattern, text, re.IGNORECASE)
+        
+        if start_match:
+            start_index = start_match.start()
             
-            if similarity >= 0.9 and similarity > best_ratio:
-                best_ratio = similarity
-                best_match = match_text
-                best_start = prev_end + match.start()
-        
-        if best_match:
-            # If this is not the last chapter, find the start of the next chapter
-            if i < len(ref_chapters) - 1:
-                next_chapter_num = ref_chapters[i + 1][0]
-                next_matches = list(re.finditer(r'\b' + re.escape(str(next_chapter_num)) + r'\s+[\w\s\-:,()&]+', text))
+            # Find start of next chapter (if there is one)
+            end_index = len(text)
+            if i < len(chapter_headings) - 1:
+                next_num = chapter_headings[i+1].split(' ', 1)[0]
+                next_title = chapter_headings[i+1].split(' ', 1)[1] if ' ' in chapter_headings[i+1] else chapter_headings[i+1]
+                next_pattern = f"{next_num}\\s+{next_title}"
                 
-                end_pos = None
-                for next_match in next_matches:
-                    next_combined = next_match.group(0).strip()
-                    next_similarity = difflib.SequenceMatcher(None, next_combined, ref_chapters[i + 1][1]).ratio()
-                    if next_similarity >= 0.9:
-                        end_pos = next_match.start()
-                        break
-                
-                if end_pos is None:
-                    end_pos = len(text)
-            else:
-                end_pos = len(text)
+                next_match = re.search(next_pattern, text, re.IGNORECASE)
+                if next_match:
+                    end_index = next_match.start()
             
             # Extract chapter content
-            content = text[best_start + len(best_match):end_pos].strip()
-            
-            # Store chapter
-            chapter_title = best_match[len(str(chapter_num)):].strip()
-            chapters[chapter_num] = {
-                "title": chapter_title,
-                "content": content
-            }
-            
-            # Update previous end position
-            prev_end = best_start
+            chapter_content = text[start_index:end_index].strip()
+            chapters[heading] = chapter_content
+        else:
+            chapters[heading] = "Chapter not found in text"
     
     return chapters
 
 # Example usage:
-if __name__ == "__main__":
-    # Reference chapter list provided by you
-    reference_chapters = """
-    1. The Evolution of Health Plans
-    2. Basic Concepts of Health Insurance
-    3. Health Plan Benefits and Networks
-    4. Provider Compensation: Fee-for-Service to Value-Based Care
-    5. The Health Maintenance Organization (HMO)
-    6. Types of HMOs and ACO Basics
-    7. PPOs and Other Health Plan Types
-    8. Health Plans for Specialty Services
-    9. Account-Based Plans: Part I
-    10. Account-Based Plans: Part II
-    11. Provider Organizations and Compensation Models
-    12. Network Structure and Management
-    13. Utilization Management
-    14. Utilization Review
-    15. Quality Assessment and Improvement
-    16. Quality Standards, Accreditation, and PerformanceMeasures
-    17. Marketing
-    18. Underwriting, Rating, and Plan Funding
-    19. Information Management
-    20. Claims Administration
-    21. Member Services
-    22. Federal Laws and Regulation
-    23. The Affordable Care Act
-    24. State Laws and Regulation
-    25. Government Programs: Medicare
-    26. Government Programs: Medicaid, CHIP, FEHB, TRICARE, and Workers' Compensation
-    27. Ethics and Health Equity
-    """
-    
-    with open("health_plans_book.txt", "r") as file:
-        book_text = file.read()
-    
-    chapters = extract_chapters(book_text, reference_chapters)
-    
-    # Print extracted chapters
-    for num in sorted(chapters.keys(), key=int):
-        print(f"Chapter {num}: {chapters[num]['title']}")
-        # Uncomment to print first 100 chars of content
-        # print(f"Content preview: {chapters[num]['content'][:100]}...")
-        # print()
+# chapter_headings = [
+#     "1 The Evolution of Health Plans",
+#     "2 Basic Concepts of Health Insurance",
+#     # ... other headings
+# ]
+# with open('extracted_book.txt', 'r') as file:
+#     book_text = file.read()
+# 
+# chapters = extract_chapters(book_text, chapter_headings)
