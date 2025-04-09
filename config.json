@@ -1,0 +1,6 @@
+{
+    "input_path": "datasets/",
+    "model_name": "TabularGAN",
+    "output_path": "output/",
+    "num_samples": 100
+}
